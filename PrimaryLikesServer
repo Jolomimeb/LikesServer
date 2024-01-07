@@ -1,0 +1,151 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <ctype.h>
+
+//function declarations
+void appendToLogFile(const char *command);
+char** splitStringIntoWords(const char* inputString, int* wordCount);
+int stringToInteger(const char *str);
+
+const int NUM_OF_CONNECTIONS = 10;
+int main() {
+    //create variable
+    int TotalLikes = 0;
+    // Create the primary LikesServer socket
+    int PrimaryLikesServer_Socket;
+    //first parameter is the domain, second parameter is the type of socket, third parameter is protocol
+    PrimaryLikesServer_Socket = socket(AF_INET, SOCK_STREAM, 0);
+
+    //specify address structure for the socket
+    struct sockaddr_in server_address;
+    server_address.sin_family = AF_INET;
+    server_address.sin_port = htons(9002);
+    server_address.sin_addr.s_addr = INADDR_ANY;
+
+    //bind the socket to IP and Port
+    int binder = bind(PrimaryLikesServer_Socket, (struct sockaddr *)&server_address, sizeof(server_address));
+    //checks if bind was successful
+    if (binder == -1) {
+        printf("Binding failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Listen for connections
+    listen(PrimaryLikesServer_Socket, 5);
+    int counter = 0;
+
+
+    //loop 10 times
+    while (counter < NUM_OF_CONNECTIONS) {
+        //array to store the received message
+        char** words;
+        int wordCount;
+        //accepts the socket
+        int likeServer_socket;
+        likeServer_socket = accept(PrimaryLikesServer_Socket, NULL, NULL);
+
+        //create buffer to store received string
+        char buffer[1024];
+        char totalBuffer[1024];
+        recv(likeServer_socket, buffer, sizeof(buffer), 0);
+
+        //sends message
+        char server_message[256] = "Likes received\n";
+        send(likeServer_socket, server_message, sizeof(server_message), 0);
+
+        //split string into words and add to array
+        words = splitStringIntoWords(buffer, &wordCount);
+
+        int tempLikeCount;
+        tempLikeCount = stringToInteger(words[1]); //convert the number to digit
+        //check for bad data
+        if (tempLikeCount == -1 ){
+            printf("Bad data\n"); ///////////////
+            appendToLogFile("Bad data");
+        }
+        else{
+            //append to log file
+            printf("%s", buffer);
+            appendToLogFile(buffer);
+            TotalLikes += tempLikeCount;
+            printf("Total %d\n", TotalLikes);   //////////
+
+            sprintf(totalBuffer, "Total %d", TotalLikes);
+            appendToLogFile(totalBuffer);
+        }
+
+        // Close the LikesServer socket
+        close(likeServer_socket);
+        //update counter
+        counter++;
+        free(words[0]);
+        free(words[1]);
+        free(words);
+    }
+    //close PrimaryLikesServerSocket
+    close(PrimaryLikesServer_Socket);
+
+    return 0;
+}
+
+void appendToLogFile(const char *command) {
+    //open the file and write to it
+    FILE *LogFile = fopen("/tmp/PrimaryLikesLog", "a");
+    if (LogFile == NULL) {
+        perror("Error opening history file");
+        return;
+    }
+    //append to the log file
+    fprintf(LogFile, "%s\n", command);
+    fclose(LogFile);
+}
+
+char** splitStringIntoWords(const char* inputString, int* wordCount) {
+    if (inputString == NULL) {
+        *wordCount = 0;
+        return NULL;
+    }
+
+    // Find the number of words by counting spaces
+    int count = 0;
+    for (int i = 0; inputString[i]; i++) {
+        if (inputString[i] == ' ') {
+            count++;
+        }
+    }
+    // Allocate memory for the array of words
+    char** words = (char**)malloc((count + 1) * sizeof(char*));
+    if (words == NULL) {
+        *wordCount = 0;
+        return NULL;
+    }
+
+    // Tokenize the string and store each word in the array
+    char* copy = strdup(inputString);  // Duplicate the input string
+    char* token = strtok(copy, " ");   // Tokenize the string
+    int index = 0;
+    while (token != NULL) {
+        words[index] = strdup(token);
+        token = strtok(NULL, " ");
+        index++;
+    }
+    words[index] = NULL;  // Null-terminate the array
+
+    *wordCount = count + 1;  // +1 to account for the NULL at the end
+    free(copy);             // Free the duplicated string
+
+    return words;
+}
+
+int stringToInteger(const char *str) {
+    //convert string to integer
+    int result = atoi(str);
+    if (result == 0 && str[0] != '0') {
+        return -1;
+    }
+    return result;
+}
